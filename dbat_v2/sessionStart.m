@@ -15,12 +15,8 @@ d.crossW = d.crossL/8;
 d.saveDir = fullfile(pwd,'data');
 d.lower_bound = 200;
 d.upper_bound = 1000;
-d.lower_bound_step = +2.5;
-d.lower_bound_step_prob = 0.25;
-d.state_gain = 10;
-d.state_noise = 5;
+d.state_gain = 1e-3;
 d.rt_max = 0.8;
-d.audioASIO = false;
 %% Parse inputs
 v = inputParser;
 fn_d = fieldnames(d);
@@ -63,30 +59,6 @@ end
 data.protocol.session = ix_session;
 %%
 data.protocol.tagroot = upper(tagroot);
-%%
-audioFs = 96e3;
-audio_T = 0.1;
-audio_t = 0:1/audioFs:audio_T;
-audio_channels = 2;
-
-if ~v.audioASIO
-    InitializePsychSound(1);%0 tries to reduce latency
-    requestedLatencyClass = 0;
-    pahandle = PsychPortAudio('Open', [], [], requestedLatencyClass, audioFs, audio_channels);
-else
-    devix = 18;%SBAudigy5/Rx ASIO 24/96[CC00]
-    InitializePsychSound(0);
-    dev = PsychPortAudio('GetDevices',[],[]);
-    disp(dev(devix).DefaultSampleRate)
-    disp(dev(devix).DeviceName)
-    if (~strcmp(dev(devix).DeviceName,'SBAudigy5/Rx ASIO 24/96[B000]'))||(~dev(devix).DefaultSampleRate == 96000)
-        error('Not ASIO')
-    end
-    if audioFs ~= dev(devix).DefaultSampleRate
-        error('Wrong sampling rate')
-    end
-    pahandle = PsychPortAudio('Open',dev(devix).DeviceIndex,[],2,dev(devix).DefaultSampleRate,2);
-end
 %% Keyboard
 KbName('UnifyKeyNames');
 escapeKey = KbName('ESCAPE');
@@ -145,8 +117,6 @@ try
     lower_bound_inst = v.lower_bound;
     x = lower_bound_inst + (upper_bound_inst - lower_bound_inst)/2;
     
-    
-    WaitSecs(0.2);
     %%
     while ~logical(keyCode(escapeKey))
         [keyIsDown,atimeNow,keyCode] = KbCheck([],scanListK);
@@ -160,13 +130,7 @@ try
             if firstStateEntrance
                 firstStateEntranceTime = timeNow;
                 firstStateEntrance = false;
-                draw.Allow = true;
-                drawCross(w, data.protocol.crossL, data.protocol.crossW, 0);
-                
-                
-                t_fixate.buffer = audio_buffer_time;
-                t_fixate.leave = v.rt_max;
-                
+                drawCross(w, data.protocol.crossL, data.protocol.crossW, 0)
                 enable_stimulus = true;
                 listen_for_response = true;
                 leaveState = false;
@@ -184,38 +148,25 @@ try
                 data.result(ix_trial).upper_bound_inst = upper_bound_inst;
                 data.result(ix_trial).lower_bound_inst = lower_bound_inst;
                 data.result(ix_trial).choice = -1;
-                
-                wavedata1 = repmat(sin(2*pi*lower_bound_inst*audio_t),audio_channels,1);
-                wavedata2 = repmat(sin(2*pi*0*audio_t),audio_channels,1);
-                wavedata3 = repmat(sin(2*pi*x_obs*audio_t),audio_channels,1);
-                PsychPortAudio('FillBuffer',pahandle,[wavedata1,wavedata2,wavedata3]);
-                
-            end
-            t_state_now = timeNow - firstStateEntranceTime;
-            
-            
-            if (t_state_now>t_fixate.buffer)&&enable_stimulus
-                PsychPortAudio('Start',pahandle, 1, 0, 0);
-                enable_stimulus = false;
-            elseif t_state_now>t_fixate.leave
-                leaveState = true;
-            end
-            
-            if keyIsDown&&listen_for_response&&(ix_trial>1)
-                % the RT is associated with previous trialTime so -1
-                data.result(ix_trial).rt = timeNow-firstStateEntranceTime;
-                if logical(keyCode(upKey))
-                    data.result(ix_trial).choice = +1;
-                    %                     elseif logical(keyCode(doKey))
-                    %                         data.result(ix_trial).choice = -1;
-                else
-                    data.result(ix_trial).choice = nan;
+            else
+                draw.Allow = false;
+                if (timeNow - firstStateEntranceTime)>v.rt_max
+                    leaveState = true;
                 end
-                listen_for_response = false;
-                %optional:
-                %                     leaveState = true;
+                
+                if keyIsDown&&listen_for_response&&(ix_trial>1)
+                    % the RT is associated with previous trialTime so -1
+                    data.result(ix_trial).rt = timeNow-firstStateEntranceTime;
+                    if logical(keyCode(upKey))
+                        data.result(ix_trial).choice = +1;
+                        %                     elseif logical(keyCode(doKey))
+                        %                         data.result(ix_trial).choice = -1;
+                    else
+                        data.result(ix_trial).choice = nan;
+                    end
+                    listen_for_response = false;
+                end
             end
-            
             
             if leaveState
                 currentState = 'feedback';
@@ -228,55 +179,50 @@ try
             if firstStateEntrance
                 firstStateEntranceTime = timeNow;
                 firstStateEntrance = false;
-                
-                t_feedback.buffer = audio_buffer_time;
-                t_feedback.leave = t_feedback.buffer + audio_T;
-                
                 leaveState = false;
-                draw.Allow = false;
-                reset_state_shock = false;
+                draw.Allow = true;
+                reset_state = false;
+                enable_feedback = true;
                 %update the state based on the choice
                 x = x + v.state_gain*data.result(ix_trial).choice;
                 if x > upper_bound_inst
                     %shock!
-                    reset_state_shock = true;
+                    reset_state = true;
                 elseif x < lower_bound_inst
                     %shock!
-                    reset_state_shock = true;
+                    reset_state = true;
                 end
-                wavedata_shock = randn(audio_channels, length(audio_t));
-                PsychPortAudio('FillBuffer',pahandle,[wavedata_shock]);
             end
-            t_state_now = timeNow - firstStateEntranceTime;
             
-            
-            
-            if (t_state_now > t_feedback.buffer)&&reset_state_shock
-                PsychPortAudio('Start',pahandle, 1, 0, 0);
-                reset_state_shock = false;
-                x = lower_bound_inst + (upper_bound_inst - lower_bound_inst)/2;
-                
-            elseif t_state_now > t_feedback.leave
+            t_now = timeNow - firstStateEntranceTime;
+            if t_now > 0.3
                 leaveState = true;
             end
             
             if leaveState
                 currentState = 'fixate';
                 firstStateEntrance = true;
+                if reset_state
+                    x = lower_bound_inst + (upper_bound_inst - lower_bound_inst)/2;
+                end
             end
         end
-        
+        if enable_stimulus
+            %start playing stimulus
+            enable_stimulus = false;
+        elseif enable_feedback
+            %start playing feedback
+            enable_feedback = false;
+        end
         %% Screen update
         if draw.Allow
             vbl = Screen('Flip', w);
-            draw.Allow = false;
         end
         
     end
     cleanup(data,false);
 catch
     cleanup(data,true);
-    
 end
 
 end

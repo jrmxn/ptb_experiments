@@ -6,4 +6,4 @@ Introduction
 
 Purpose
 =======
- DBAT v1
+ DBAT type 2
