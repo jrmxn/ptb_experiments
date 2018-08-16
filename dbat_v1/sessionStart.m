@@ -33,6 +33,8 @@ for ix_d = 1:length(fn_d)
 end
 parse(v,varargin{:});
 data.protocol = v.Results;clear d;
+%%
+if isempty(which('Screen')),error('You need to install psychtoobox!');end
 %% Setup the fixation state
 pd_fixate = makedist('Uniform', 'lower', data.protocol.lower_fixate, 'upper', data.protocol.upper_fixate);
 %%
