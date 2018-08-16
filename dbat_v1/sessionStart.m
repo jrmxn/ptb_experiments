@@ -151,9 +151,12 @@ try
     lower_bound_inst = data.protocol.lower_bound;
     x = lower_bound_inst + (upper_bound_inst - lower_bound_inst)/2;
     
-    rng(0)
+    rng(string2hash([data.protocol.tagroot,data.protocol.session]));
     audio_buffer_time = 0.1;
-    
+    %% begin by going up
+        while ~logical(keyCode(upKey))
+        [keyIsDown,atimeNow,keyCode] = KbCheck([],scanListK);
+        end
     %%
     while ~logical(keyCode(escapeKey))
         [keyIsDown,atimeNow,keyCode] = KbCheck([],scanListK);
@@ -191,7 +194,6 @@ try
                 
                 
                 ix_trial = ix_trial + 1;
-                x_obs = x + randn*data.protocol.state_noise;
                 
                 data.result(ix_trial).x = x;
                 data.result(ix_trial).x_obs = x_obs;
@@ -200,20 +202,6 @@ try
                 data.result(ix_trial).lower_bound_inst = lower_bound_inst;
                 data.result(ix_trial).choice = -1;
                 
-%                 wavedata1 = repmat(sin(2*pi*lower_bound_inst*audio_t),audio_channels,1);
-%                 wavedata2 = repmat(wavedata1,1,2)*0;
-%                 wavedata3 = repmat(sin(2*pi*upper_bound_inst*audio_t),audio_channels,1);
-%                 wavedata4 = repmat(wavedata1,1,4)*0;
-%                 wavedata5 = repmat(sin(2*pi*x_obs*audio_t),audio_channels,1);
-%                 wavedata = [wavedata1,wavedata2,wavedata3,wavedata4,wavedata5];
-                
-%                 wavedata1 = repmat(sin(2*pi*upper_bound_inst*audio_t),audio_channels,1);
-%                 wavedata2 = repmat(wavedata1,1,4)*0;
-%                 wavedata3 = repmat(sin(2*pi*x_obs*audio_t),audio_channels,1);
-%                 wavedata = [wavedata1,wavedata2,wavedata3];
-%                 y = sin(2*pi*lower_bound_inst*[1/audioFs:1/audioFs:length(wavedata)/audioFs]);
-%                 wavedata(1,:) = y;
-
                 wavedata1 = repmat(sin(2*pi*upper_bound_inst*audio_t),audio_channels,1);
                 wavedata1(1,:) = sin(2*pi*lower_bound_inst*audio_t);
                 wavedata2 = repmat(wavedata1,1,3)*0;
@@ -233,22 +221,20 @@ try
                 leaveState = true;
             end
             
-            if keyIsDown&&listen_for_response&&(ix_trial>1)
+            if keyIsDown&&listen_for_response
                 % the RT is associated with previous trialTime so -1
                 data.result(ix_trial).rt = timeNow-firstStateEntranceTime;
                 if logical(keyCode(upKey))
                     data.result(ix_trial).choice = +1;
-                    %                     elseif logical(keyCode(doKey))
-                    %                         data.result(ix_trial).choice = -1;
+                elseif logical(keyCode(doKey))
+                    data.result(ix_trial).choice = -1;
                 else
-                    data.result(ix_trial).choice = 0;
-                    %should punish here
+                    leaveState = true;
                 end
-                listen_for_response = false;
-                %optional:
-                %                     leaveState = true;
             end
             
+            x = x + data.protocol.state_gain*data.result(ix_trial).choice;
+            x_obs = x + randn*data.protocol.state_noise;
             
             if leaveState
                 currentState = 'feedback';
@@ -269,7 +255,6 @@ try
                 draw.Allow = false;
                 reset_state_shock = false;
                 %update the state based on the choice
-                x = x + data.protocol.state_gain*data.result(ix_trial).choice;
                 if x > upper_bound_inst
                     %shock!
                     reset_state_shock = true;
