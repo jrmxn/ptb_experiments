@@ -15,11 +15,15 @@ d.crossW = d.crossL/8;
 d.saveDir = fullfile(pwd,'data');
 d.lower_bound = 200;
 d.upper_bound = 1000;
-d.lower_bound_step = +2.5;
-d.lower_bound_step_prob = 0.25;
-d.state_gain = 10;
-d.state_noise = 5;
-d.rt_max = 0.8;
+d.lower_bound_step = +25;
+d.lower_bound_step_alt = 0;
+d.lower_bound_step_prob = 0.5;
+d.upper_bound_step = -0;
+d.upper_bound_step_alt = 0;
+d.upper_bound_step_prob = 0.5;
+d.state_gain = abs(2*d.lower_bound_step);
+d.state_noise = 10;
+d.rt_max = 1.8;
 d.audioASIO = false;
 %% Parse inputs
 v = inputParser;
@@ -65,11 +69,11 @@ data.protocol.session = ix_session;
 data.protocol.tagroot = upper(tagroot);
 %%
 audioFs = 96e3;
-audio_T = 0.1;
+audio_T = 0.15;
 audio_t = 0:1/audioFs:audio_T;
 audio_channels = 2;
 
-if ~v.audioASIO
+if ~data.protocol.audioASIO
     InitializePsychSound(1);%0 tries to reduce latency
     requestedLatencyClass = 0;
     pahandle = PsychPortAudio('Open', [], [], requestedLatencyClass, audioFs, audio_channels);
@@ -141,12 +145,13 @@ try
     firstStateEntrance = true;
     currentState = 'fixate';
     data.result = [];
-    upper_bound_inst = v.upper_bound;
-    lower_bound_inst = v.lower_bound;
+    upper_bound_inst = data.protocol.upper_bound;
+    lower_bound_inst = data.protocol.lower_bound;
     x = lower_bound_inst + (upper_bound_inst - lower_bound_inst)/2;
     
+    rng(0)
+    audio_buffer_time = 0.1;
     
-    WaitSecs(0.2);
     %%
     while ~logical(keyCode(escapeKey))
         [keyIsDown,atimeNow,keyCode] = KbCheck([],scanListK);
@@ -165,18 +170,26 @@ try
                 
                 
                 t_fixate.buffer = audio_buffer_time;
-                t_fixate.leave = v.rt_max;
+                t_fixate.leave = data.protocol.rt_max;
                 
                 enable_stimulus = true;
                 listen_for_response = true;
                 leaveState = false;
                 
-                if rand > v.lower_bound_step_prob
-                    lower_bound_inst = lower_bound_inst + v.lower_bound_step;
+                if rand > data.protocol.lower_bound_step_prob
+                    lower_bound_inst = lower_bound_inst + data.protocol.lower_bound_step;
+                else
+                    lower_bound_inst = lower_bound_inst + data.protocol.lower_bound_step_alt;
+                end
+                if rand > data.protocol.upper_bound_step_prob
+                    upper_bound_inst = upper_bound_inst + data.protocol.upper_bound_step;
+                else
+                    upper_bound_inst = upper_bound_inst + data.protocol.upper_bound_step_alt;
                 end
                 
+                
                 ix_trial = ix_trial + 1;
-                x_obs = x + d.state_noise;
+                x_obs = x + randn*data.protocol.state_noise;
                 
                 data.result(ix_trial).x = x;
                 data.result(ix_trial).x_obs = x_obs;
@@ -185,10 +198,27 @@ try
                 data.result(ix_trial).lower_bound_inst = lower_bound_inst;
                 data.result(ix_trial).choice = -1;
                 
-                wavedata1 = repmat(sin(2*pi*lower_bound_inst*audio_t),audio_channels,1);
-                wavedata2 = repmat(sin(2*pi*0*audio_t),audio_channels,1);
+%                 wavedata1 = repmat(sin(2*pi*lower_bound_inst*audio_t),audio_channels,1);
+%                 wavedata2 = repmat(wavedata1,1,2)*0;
+%                 wavedata3 = repmat(sin(2*pi*upper_bound_inst*audio_t),audio_channels,1);
+%                 wavedata4 = repmat(wavedata1,1,4)*0;
+%                 wavedata5 = repmat(sin(2*pi*x_obs*audio_t),audio_channels,1);
+%                 wavedata = [wavedata1,wavedata2,wavedata3,wavedata4,wavedata5];
+                
+%                 wavedata1 = repmat(sin(2*pi*upper_bound_inst*audio_t),audio_channels,1);
+%                 wavedata2 = repmat(wavedata1,1,4)*0;
+%                 wavedata3 = repmat(sin(2*pi*x_obs*audio_t),audio_channels,1);
+%                 wavedata = [wavedata1,wavedata2,wavedata3];
+%                 y = sin(2*pi*lower_bound_inst*[1/audioFs:1/audioFs:length(wavedata)/audioFs]);
+%                 wavedata(1,:) = y;
+
+                wavedata1 = repmat(sin(2*pi*upper_bound_inst*audio_t),audio_channels,1);
+                wavedata1(1,:) = sin(2*pi*lower_bound_inst*audio_t);
+                wavedata2 = repmat(wavedata1,1,3)*0;
                 wavedata3 = repmat(sin(2*pi*x_obs*audio_t),audio_channels,1);
-                PsychPortAudio('FillBuffer',pahandle,[wavedata1,wavedata2,wavedata3]);
+                wavedata = [wavedata1,wavedata2,wavedata3];
+                
+                PsychPortAudio('FillBuffer',pahandle,wavedata);
                 
             end
             t_state_now = timeNow - firstStateEntranceTime;
@@ -209,7 +239,8 @@ try
                     %                     elseif logical(keyCode(doKey))
                     %                         data.result(ix_trial).choice = -1;
                 else
-                    data.result(ix_trial).choice = nan;
+                    data.result(ix_trial).choice = 0;
+                    %should punish here
                 end
                 listen_for_response = false;
                 %optional:
@@ -236,7 +267,7 @@ try
                 draw.Allow = false;
                 reset_state_shock = false;
                 %update the state based on the choice
-                x = x + v.state_gain*data.result(ix_trial).choice;
+                x = x + data.protocol.state_gain*data.result(ix_trial).choice;
                 if x > upper_bound_inst
                     %shock!
                     reset_state_shock = true;
@@ -249,13 +280,13 @@ try
             end
             t_state_now = timeNow - firstStateEntranceTime;
             
-            
-            
             if (t_state_now > t_feedback.buffer)&&reset_state_shock
                 PsychPortAudio('Start',pahandle, 1, 0, 0);
                 reset_state_shock = false;
+                lower_bound_inst = data.protocol.lower_bound;
+                upper_bound_inst = data.protocol.upper_bound;
                 x = lower_bound_inst + (upper_bound_inst - lower_bound_inst)/2;
-                
+                disp([lower_bound_inst, x, upper_bound_inst]);
             elseif t_state_now > t_feedback.leave
                 leaveState = true;
             end
