@@ -22,7 +22,7 @@ d.upper_bound_step = -0;
 d.upper_bound_step_alt = 0;
 d.upper_bound_step_prob = 0.5;
 d.state_gain = abs(2*d.lower_bound_step);
-d.state_noise = 10;
+d.state_noise = 25;
 d.rt_max = 1.8;
 d.audioASIO = false;
 %% Parse inputs
@@ -35,8 +35,6 @@ parse(v,varargin{:});
 data.protocol = v.Results;clear d;
 %%
 if isempty(which('Screen')),error('You need to install psychtoobox!');end
-%% Setup the fixation state
-pd_fixate = makedist('Uniform', 'lower', data.protocol.lower_fixate, 'upper', data.protocol.upper_fixate);
 %%
 [~,hostname] = system('hostname');
 data.hostname = strtrim(hostname);
@@ -137,7 +135,7 @@ try
     %% Screen
     whichScreen = 0;
     [w, rect] = Screen('Openwindow',whichScreen,[0,0,0]);%,[],[],2);
-    ifi = Screen('GetFlipInterval', w);
+    %     ifi = Screen('GetFlipInterval', w);
     data.protocol.W = rect(RectRight); % screen width
     data.protocol.H = rect(RectBottom); % screen height
     drawCross(w, data.protocol.crossL, data.protocol.crossW, 0)
@@ -152,19 +150,19 @@ try
     upper_bound_inst = data.protocol.upper_bound;
     lower_bound_inst = data.protocol.lower_bound;
     x = lower_bound_inst + (upper_bound_inst - lower_bound_inst)/2;
-    
+    x_obs = x;
     rng(string2hash([data.protocol.tagroot,data.protocol.session]));
     audio_buffer_time = 0.1;
     %% begin by going up
-        while ~logical(keyCode(upKey))
-        [keyIsDown,atimeNow,keyCode] = KbCheck([],scanListK);
-        end
+    while ~logical(keyCode(upKey))
+        [~, ~, keyCode] = KbCheck([],scanListK);
+    end
     %%
     while ~logical(keyCode(escapeKey))
         [keyIsDown,atimeNow,keyCode] = KbCheck([],scanListK);
         timeNow = atimeNow - timeStart;
         if data.protocol.useMouseClicks
-            [~,~,keyCodeMouse] = GetMouse;
+            [~, ~, keyCodeMouse] = GetMouse;
             error('Not fully implemented');
         end
         %% State changes
@@ -174,7 +172,6 @@ try
                 firstStateEntrance = false;
                 draw.Allow = true;
                 drawCross(w, data.protocol.crossL, data.protocol.crossW, 0);
-                
                 
                 t_fixate.buffer = audio_buffer_time;
                 t_fixate.leave = data.protocol.rt_max;
@@ -193,7 +190,6 @@ try
                 else
                     upper_bound_inst = upper_bound_inst + data.protocol.upper_bound_step_alt;
                 end
-                
                 
                 ix_trial = ix_trial + 1;
                 
@@ -235,15 +231,15 @@ try
                 end
             end
             
-            x = x + data.protocol.state_gain*data.result(ix_trial).choice;
-            x_obs = x + randn*data.protocol.state_noise;
-            
             if leaveState
                 currentState = 'feedback';
                 firstStateEntrance = true;
                 if timeNow>data.protocol.maxtime
                     keyCode(escapeKey) = true;
                 end
+                x = x + data.protocol.state_gain*data.result(ix_trial).choice;
+                x_noise = randn*data.protocol.state_noise;
+                x_obs = x + x_noise;
             end
         elseif strcmpi(currentState,'feedback')
             if firstStateEntrance
