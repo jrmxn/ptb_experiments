@@ -117,6 +117,8 @@ end
 
 %% Final check
 fprintf('Press Ctrl-C to cancel. Press the ESC key to cotinue...\n')
+fprintf('Press w when screen is loaded...\n')
+
 while (~logical(keyCode(escapeKey)))
     [~,keyCode] = KbWait([], 3);
 end
