@@ -2,14 +2,8 @@ function sessionStart(varargin)
 %%
 %
 d.maxtime = Inf;
-d.t_rot = 0.02;%time to rotate
-d.deg_max = 45;
 d.debugMode = true;
 d.useMouseClicks = false;
-d.lower_fixate = 35;
-d.upper_fixate = 45;
-d.lower_fixate = 5;
-d.upper_fixate = 6;
 d.crossL = 16;%unit: pixels. Should be 6 degrees. Needs calculating depdent on physical monitor size and resolution.
 d.crossW = d.crossL/8;
 d.saveDir = fullfile(pwd,'data');
