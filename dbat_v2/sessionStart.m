@@ -2,14 +2,8 @@ function sessionStart(varargin)
 %%
 %
 d.maxtime = 15;
-% d.t_rot = 0.02;%time to rotate
-% d.deg_max = 45;
 d.debugMode = true;
 d.useMouseClicks = false;
-% d.lower_fixate = 35;
-% d.upper_fixate = 45;
-% d.lower_fixate = 5;
-% d.upper_fixate = 6;
 d.crossL = 16;%unit: pixels. Should be 6 degrees. Needs calculating depdent on physical monitor size and resolution.
 d.crossW = d.crossL/8;
 d.saveDir = fullfile(pwd,'data');
@@ -226,7 +220,6 @@ try
                 %reset xaaa
                 x = lower_bound_inst + (upper_bound_inst - lower_bound_inst)/2;
                 listen_for_response = false;
-                disp('B')
             elseif x_instant<lower_bound_inst
                 leaveState_fb = true;
                 data.result(ix_trial).bound = -1;
@@ -234,17 +227,18 @@ try
                 %reset x
                 x = lower_bound_inst + (upper_bound_inst - lower_bound_inst)/2;
                 listen_for_response = false;
-                disp('C')
             end
             
             if leaveState_fb
                 currentState = 'feedback';
                 firstStateEntrance = true;
                 PsychPortAudio('Stop', pahandle, 1);
+                PsychPortAudio('Close');
             elseif leaveState_choice
                 currentState = 'choice';
                 firstStateEntrance = true;
                 PsychPortAudio('Stop', pahandle, 1);
+                PsychPortAudio('Close');
             elseif timeNow>data.protocol.maxtime
                 keyCode(escapeKey) = true;
             end
