@@ -14,16 +14,16 @@ d.crossL = 16;%unit: pixels. Should be 6 degrees. Needs calculating depdent on p
 d.crossW = d.crossL/8;
 d.saveDir = fullfile(pwd,'data');
 d.lower_bound = 200;
-d.upper_bound = 1000;
-d.lower_bound_step = +25;
+d.upper_bound = 4200;
+d.lower_bound_step = +25*4;
 d.lower_bound_step_alt = 0;
 d.lower_bound_step_prob = 0.5;
 d.upper_bound_step = -0;
 d.upper_bound_step_alt = 0;
 d.upper_bound_step_prob = 0.5;
 d.state_gain = abs(2*d.lower_bound_step);
-d.state_noise = 25;
-d.rt_max = 1.8;
+d.state_noise = 20*4;
+d.rt_max = 2.0;
 d.audioASIO = false;
 %% Parse inputs
 v = inputParser;
@@ -72,7 +72,7 @@ audioFs = 96e3;
 audio_T = 0.15;
 audio_t = 0:1/audioFs:audio_T;
 audio_channels = 2;
-
+% would need to use ASIO
 if ~data.protocol.audioASIO
     InitializePsychSound(1);%0 tries to reduce latency
     requestedLatencyClass = 0;
@@ -152,7 +152,6 @@ try
     x = lower_bound_inst + (upper_bound_inst - lower_bound_inst)/2;
     x_obs = x;
     rng(string2hash([data.protocol.tagroot,data.protocol.session]));
-    audio_buffer_time = 0.1;
     %% begin by going up
     while ~logical(keyCode(upKey))
         [~, ~, keyCode] = KbCheck([],scanListK);
@@ -173,7 +172,6 @@ try
                 draw.Allow = true;
                 drawCross(w, data.protocol.crossL, data.protocol.crossW, 0);
                 
-                t_fixate.buffer = audio_buffer_time;
                 t_fixate.leave = data.protocol.rt_max;
                 
                 enable_stimulus = true;
@@ -199,21 +197,31 @@ try
                 data.result(ix_trial).upper_bound_inst = upper_bound_inst;
                 data.result(ix_trial).lower_bound_inst = lower_bound_inst;
                 data.result(ix_trial).choice = -1;
-                
-                wavedata1 = repmat(sin(2*pi*upper_bound_inst*audio_t),audio_channels,1);
-                wavedata1(1,:) = sin(2*pi*lower_bound_inst*audio_t);
+%                 
+%                 wavedata1 = repmat(sin(2*pi*upper_bound_inst*audio_t),audio_channels,1);
+%                 wavedata1(1,:) = sin(2*pi*lower_bound_inst*audio_t);
+%                 wavedata2 = repmat(wavedata1,1,3)*0;
+%                 wavedata3 = repmat(sin(2*pi*x_obs*audio_t),audio_channels,1);
+%                 wavedata = [wavedata1,wavedata2,wavedata3];
+
+                wavedata1 = repmat(sin(2*pi*lower_bound_inst*audio_t),audio_channels,1);
+%                 wavedata1(2,:) = 0;
                 wavedata2 = repmat(wavedata1,1,3)*0;
-                wavedata3 = repmat(sin(2*pi*x_obs*audio_t),audio_channels,1);
-                wavedata = [wavedata1,wavedata2,wavedata3];
-                
+                wavedata3 = repmat(sin(2*pi*upper_bound_inst*audio_t),audio_channels,1);
+%                 wavedata3(1,:) = 0;
+                wavedata4 = repmat(wavedata3,1,3)*0;
+                wavedata5 = repmat(sin(2*pi*x_obs*audio_t),audio_channels,1);
+%                 wavedata = [wavedata1,wavedata2,wavedata5,wavedata4,wavedata3];
+                wavedata = [wavedata1,wavedata2,wavedata5];
+
                 PsychPortAudio('FillBuffer',pahandle,wavedata);
                 
             end
             t_state_now = timeNow - firstStateEntranceTime;
             
             
-            if (t_state_now>t_fixate.buffer)&&enable_stimulus
-                PsychPortAudio('Start',pahandle, 1, 0, 0);
+            if (t_state_now>0)&&enable_stimulus
+                PsychPortAudio('Start', pahandle, 1);
                 enable_stimulus = false;
             elseif t_state_now>t_fixate.leave
                 leaveState = true;
@@ -240,14 +248,15 @@ try
                 x = x + data.protocol.state_gain*data.result(ix_trial).choice;
                 x_noise = randn*data.protocol.state_noise;
                 x_obs = x + x_noise;
+                PsychPortAudio('Stop', pahandle, 1);
             end
         elseif strcmpi(currentState,'feedback')
             if firstStateEntrance
                 firstStateEntranceTime = timeNow;
                 firstStateEntrance = false;
                 
-                t_feedback.buffer = audio_buffer_time;
-                t_feedback.leave = t_feedback.buffer + audio_T;
+%                 t_feedback.buffer = audio_buffer_time;
+                t_feedback.leave = audio_T;
                 
                 leaveState = false;
                 draw.Allow = false;
@@ -261,12 +270,12 @@ try
                     reset_state_shock = true;
                 end
                 wavedata_shock = randn(audio_channels, length(audio_t));
-                PsychPortAudio('FillBuffer',pahandle,[wavedata_shock]);
+                PsychPortAudio('FillBuffer', pahandle, wavedata_shock);
             end
             t_state_now = timeNow - firstStateEntranceTime;
             
-            if (t_state_now > t_feedback.buffer)&&reset_state_shock
-                PsychPortAudio('Start',pahandle, 1, 0, 0);
+            if (t_state_now > 0)&&reset_state_shock
+                PsychPortAudio('Start',pahandle);
                 reset_state_shock = false;
                 lower_bound_inst = data.protocol.lower_bound;
                 upper_bound_inst = data.protocol.upper_bound;
@@ -279,6 +288,7 @@ try
             if leaveState
                 currentState = 'fixate';
                 firstStateEntrance = true;
+                PsychPortAudio('Stop', pahandle, 1);
             end
         end
         
@@ -303,10 +313,12 @@ function cleanup(data, errorHappened)
 if not(exist(data.protocol.saveDir,'dir')==7)
     mkdir(data.protocol.saveDir);
 end
+
 f_name = sprintf('fres_%s_%s_%02d', data.protocol.timeStartString, data.protocol.tagroot, data.protocol.session);
 f_out = fullfile(data.protocol.saveDir,f_name);
 save(f_out,'data');
 sca;
+PsychPortAudio('Close');
 
 if errorHappened
     psychrethrow(psychlasterror);
