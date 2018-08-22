@@ -1,7 +1,7 @@
 function sessionStart(varargin)
 %%
 %
-d.maxtime = Inf;
+d.maxtime = 15;
 % d.t_rot = 0.02;%time to rotate
 % d.deg_max = 45;
 d.debugMode = true;
@@ -15,14 +15,14 @@ d.crossW = d.crossL/8;
 d.saveDir = fullfile(pwd,'data');
 d.lower_bound = 200;
 d.upper_bound = 4200;
-d.lower_bound_step = +25*4;
+d.lower_bound_step = 0;
 d.lower_bound_step_alt = 0;
-d.lower_bound_step_prob = 0.5;
+d.lower_bound_step_prob = 0;
 d.upper_bound_step = -0;
 d.upper_bound_step_alt = 0;
 d.upper_bound_step_prob = 0.5;
-d.state_gain = abs(2*d.lower_bound_step);
-d.state_noise = 20*4;
+d.state_gain = 100;%hz/s
+d.state_noise = 0;
 d.rt_max = 2.0;
 d.audioASIO = false;
 %% Parse inputs
@@ -115,7 +115,7 @@ end
 
 %% Final check
 fprintf('Press Ctrl-C to cancel. Press the ESC key to cotinue...\n')
-fprintf('Press w when screen is loaded...\n')
+fprintf('Press a when screen is loaded...\n')
 
 while (~logical(keyCode(escapeKey)))
     [~,keyCode] = KbWait([], 3);
@@ -150,10 +150,10 @@ try
     upper_bound_inst = data.protocol.upper_bound;
     lower_bound_inst = data.protocol.lower_bound;
     x = lower_bound_inst + (upper_bound_inst - lower_bound_inst)/2;
-    direct = 1;
+    choice = 1;
     rng(string2hash([data.protocol.tagroot,data.protocol.session]));
     %% begin by going up
-    while ~logical(keyCode(upKey))
+    while ~logical(keyCode(leKey))
         [~, ~, keyCode] = KbCheck([],scanListK);
     end
     %%
@@ -190,15 +190,17 @@ try
                 end
                 
                 ix_trial = ix_trial + 1;
-                data.result(ix_trial).direction = choice;
+                direction = choice;
+                data.result(ix_trial).direction = direction;
                 data.result(ix_trial).choice = nan;
                 data.result(ix_trial).rt = nan;
                 data.result(ix_trial).bound = 0;
                 data.result(ix_trial).upper_bound_inst = upper_bound_inst;
                 data.result(ix_trial).lower_bound_inst = lower_bound_inst;
                 %
-                f = x + audio_t*data.protocol.state_gain*choice + randn(size(audio_t))*data.protocol.state_noise;
-                wavedata = repmat(sin(2*pi*f),audio_channels,1);
+                f = x + audio_t*data.protocol.state_gain*direction + randn(size(audio_t))*data.protocol.state_noise;
+%                 plot(audio_t,f)
+                wavedata = repmat(sin(2*pi*f.*audio_t),audio_channels,1);
                 PsychPortAudio('FillBuffer',pahandle,wavedata);
                 %for simplicity...
                 PsychPortAudio('Start', pahandle, 1);
@@ -208,21 +210,31 @@ try
             [~, ix_min] = min(abs(t_state_now-audio_t));
             x_instant = f(ix_min);
             
-            
+%             disp('X');not(logical(keyCode(leKey)))
             if not(logical(keyCode(leKey)))&&listen_for_response
                 % the RT is associated with previous trialTime so -1
                 data.result(ix_trial).rt = timeNow-firstStateEntranceTime;
                 leaveState_choice = true;
                 data.result(ix_trial).x = x_instant;
                 data.result(ix_trial).rt = timeNow-firstStateEntranceTime;
+                listen_for_response = false;
+                disp('A');not(logical(keyCode(leKey)))
             elseif x_instant>upper_bound_inst
                 leaveState_fb = true;
                 data.result(ix_trial).bound = +1;
                 data.result(ix_trial).x = x_instant;
+                %reset xaaa
+                x = lower_bound_inst + (upper_bound_inst - lower_bound_inst)/2;
+                listen_for_response = false;
+                disp('B')
             elseif x_instant<lower_bound_inst
                 leaveState_fb = true;
                 data.result(ix_trial).bound = -1;
                 data.result(ix_trial).x = x_instant;
+                %reset x
+                x = lower_bound_inst + (upper_bound_inst - lower_bound_inst)/2;
+                listen_for_response = false;
+                disp('C')
             end
             
             if leaveState_fb
@@ -270,13 +282,15 @@ try
                 firstStateEntrance = true;
                 choice = round(2*(randi(2)-1.5));
                 PsychPortAudio('Stop', pahandle, 1);
+            elseif timeNow>data.protocol.maxtime
+                keyCode(escapeKey) = true;
             end
             
         elseif strcmpi(currentState,'choice')
             if firstStateEntrance
                 firstStateEntranceTime = timeNow;
                 firstStateEntrance = false;
-                t_feedback.leave = v.rt_max;
+                t_feedback.leave = data.protocol.rt_max;
                 
                 leaveState_choice = false;
                 leaveState_fb = false;
@@ -315,6 +329,8 @@ try
             elseif leaveState_choice
                 currentState = 'fixate';
                 firstStateEntrance = true;
+            elseif timeNow>data.protocol.maxtime
+                keyCode(escapeKey) = true;
             end
             
             
@@ -352,7 +368,7 @@ PsychPortAudio('Close');
 if errorHappened
     psychrethrow(psychlasterror);
 end
-ab_basic;
+% ab_basic;
 end
 
 function drawCross(window, W, L, theta, c)
