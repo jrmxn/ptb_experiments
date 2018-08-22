@@ -1,4 +1,8 @@
-d = load('C:\Users\jmcin\Local\gitprojects\ptb_experiments\dbat_v1\data\fres_180820125323_SUB00_00.mat');
+d_loc = dir('data');
+d_loc = d_loc(contains({d_loc.name},'fres'));
+[~,ix] = max([d_loc.datenum]);
+d_loc = d_loc(ix);
+d = load(fullfile(d_loc.folder, d_loc.name));
 d = d.data;
 clf;hold on;
 plot([d.result.upper_bound_inst]);

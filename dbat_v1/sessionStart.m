@@ -323,6 +323,7 @@ PsychPortAudio('Close');
 if errorHappened
     psychrethrow(psychlasterror);
 end
+ab_basic;
 end
 
 function drawCross(window, W, L, theta)
