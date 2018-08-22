@@ -17,7 +17,7 @@ d.upper_bound_step_alt = 0;
 d.upper_bound_step_prob = 0.5;
 d.state_gain = abs(2*d.lower_bound_step);
 d.state_noise = 20*4;
-d.rt_max = 2.0;
+d.rt_max = 3.0;
 d.audioASIO = false;
 %% Parse inputs
 v = inputParser;
