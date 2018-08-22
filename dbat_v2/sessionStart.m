@@ -1,7 +1,7 @@
 function sessionStart(varargin)
 %%
 %
-d.maxtime = 15;
+d.maxtime = 120;
 d.debugMode = true;
 d.useMouseClicks = false;
 d.crossL = 16;%unit: pixels. Should be 6 degrees. Needs calculating depdent on physical monitor size and resolution.
@@ -15,9 +15,9 @@ d.lower_bound_step_prob = 0;
 d.upper_bound_step = -0;
 d.upper_bound_step_alt = 0;
 d.upper_bound_step_prob = 0.5;
-d.state_gain = 100;%hz/s
-d.state_noise = 0;
-d.rt_max = 2.0;
+d.state_gain = 500;%hz/s
+d.state_noise = 250;
+d.rt_max = 5.0;
 d.audioASIO = false;
 %% Parse inputs
 v = inputParser;
@@ -63,8 +63,9 @@ data.protocol.session = ix_session;
 data.protocol.tagroot = upper(tagroot);
 %%
 audioFs = 96e3;
-audio_T = 30;
+audio_T = 0.1;
 audio_t = 0:1/audioFs:audio_T;
+audio_t_full = 0:1/audioFs:30;
 audio_channels = 2;
 % would need to use ASIO
 if ~data.protocol.audioASIO
@@ -146,10 +147,6 @@ try
     x = lower_bound_inst + (upper_bound_inst - lower_bound_inst)/2;
     choice = 1;
     rng(string2hash([data.protocol.tagroot,data.protocol.session]));
-    %% begin by going up
-    while ~logical(keyCode(leKey))
-        [~, ~, keyCode] = KbCheck([],scanListK);
-    end
     %%
     
     while ~logical(keyCode(escapeKey))
@@ -162,6 +159,9 @@ try
         %% State changes
         if strcmpi(currentState,'fixate')
             if firstStateEntrance
+                while ~logical(keyCode(leKey))
+                    [~, ~, keyCode] = KbCheck([],scanListK);
+                end
                 firstStateEntranceTime = timeNow;
                 firstStateEntrance = false;
                 draw.Allow = true;
@@ -192,53 +192,64 @@ try
                 data.result(ix_trial).upper_bound_inst = upper_bound_inst;
                 data.result(ix_trial).lower_bound_inst = lower_bound_inst;
                 %
-                f = x + audio_t*data.protocol.state_gain*direction + randn(size(audio_t))*data.protocol.state_noise;
-%                 plot(audio_t,f)
-                wavedata = repmat(sin(2*pi*f.*audio_t),audio_channels,1);
-                PsychPortAudio('FillBuffer',pahandle,wavedata);
+                
+                audio_t_full = [0:1/100:30];
+                f = x + audio_t_full*data.protocol.state_gain*direction + randn(size(audio_t_full))*data.protocol.state_noise;
+                %                 plot(audio_t,f)
+                
+                
                 %for simplicity...
-                PsychPortAudio('Start', pahandle, 1);
-                firstStateEntranceTime = timeNow;
+                %                 firstStateEntranceTime = timeNow;
             end
             t_state_now = timeNow - firstStateEntranceTime;
-            [~, ix_min] = min(abs(t_state_now-audio_t));
+            [~, ix_min] = min(abs(t_state_now-audio_t_full));
             x_instant = f(ix_min);
+            %             % remember this should only be on key press
+            %             wavedata = repmat(sin(2*pi*x_instant.*audio_t),audio_channels,1);
+            %             PsychPortAudio('FillBuffer',pahandle,wavedata);
+            %             PsychPortAudio('Start', pahandle, 1);
             
-%             disp('X');not(logical(keyCode(leKey)))
-            if not(logical(keyCode(leKey)))&&listen_for_response
-                % the RT is associated with previous trialTime so -1
-                data.result(ix_trial).rt = timeNow-firstStateEntranceTime;
-                leaveState_choice = true;
-                data.result(ix_trial).x = x_instant;
-                data.result(ix_trial).rt = timeNow-firstStateEntranceTime;
-                listen_for_response = false;
-                disp('A');not(logical(keyCode(leKey)))
-            elseif x_instant>upper_bound_inst
-                leaveState_fb = true;
-                data.result(ix_trial).bound = +1;
-                data.result(ix_trial).x = x_instant;
-                %reset xaaa
-                x = lower_bound_inst + (upper_bound_inst - lower_bound_inst)/2;
-                listen_for_response = false;
-            elseif x_instant<lower_bound_inst
-                leaveState_fb = true;
-                data.result(ix_trial).bound = -1;
-                data.result(ix_trial).x = x_instant;
-                %reset x
-                x = lower_bound_inst + (upper_bound_inst - lower_bound_inst)/2;
-                listen_for_response = false;
+            %             disp('X');not(logical(keyCode(leKey)))
+            cond1 = not(logical(keyCode(leKey)))&&listen_for_response;
+            cond2 = x_instant>upper_bound_inst;
+            cond3 = x_instant<lower_bound_inst;
+            
+            if cond1||cond2||cond3
+                % remember this should only be on key press
+                wavedata = repmat(sin(2*pi*x_instant.*audio_t),audio_channels,1);
+                PsychPortAudio('FillBuffer',pahandle,wavedata);
+                PsychPortAudio('Start', pahandle, 1);
+                
+                if cond1
+                    % the RT is associated with previous trialTime so -1
+                    data.result(ix_trial).rt = timeNow-firstStateEntranceTime;
+                    leaveState_choice = true;
+                    data.result(ix_trial).x = x_instant;
+                    data.result(ix_trial).rt = timeNow-firstStateEntranceTime;
+                    listen_for_response = false;
+                elseif cond2
+                    leaveState_fb = true;
+                    data.result(ix_trial).bound = +1;
+                    data.result(ix_trial).x = x_instant;
+                    %reset xaaa
+                    x = lower_bound_inst + (upper_bound_inst - lower_bound_inst)/2;
+                    listen_for_response = false;
+                elseif cond3
+                    leaveState_fb = true;
+                    data.result(ix_trial).bound = -1;
+                    data.result(ix_trial).x = x_instant;
+                    %reset x
+                    x = lower_bound_inst + (upper_bound_inst - lower_bound_inst)/2;
+                    listen_for_response = false;
+                end
             end
             
             if leaveState_fb
                 currentState = 'feedback';
                 firstStateEntrance = true;
-                PsychPortAudio('Stop', pahandle, 1);
-                PsychPortAudio('Close');
             elseif leaveState_choice
                 currentState = 'choice';
                 firstStateEntrance = true;
-                PsychPortAudio('Stop', pahandle, 1);
-                PsychPortAudio('Close');
             elseif timeNow>data.protocol.maxtime
                 keyCode(escapeKey) = true;
             end
@@ -282,11 +293,12 @@ try
             
         elseif strcmpi(currentState,'choice')
             if firstStateEntrance
+                disp('MADE IT HERE');
                 firstStateEntranceTime = timeNow;
                 firstStateEntrance = false;
                 t_feedback.leave = data.protocol.rt_max;
                 
-                leaveState_choice = false;
+                leaveState_fixate = false;
                 leaveState_fb = false;
                 
                 draw.Allow = true;
@@ -303,24 +315,26 @@ try
                 data.result(ix_trial).rt_choice = timeNow-firstStateEntranceTime;
                 if logical(keyCode(upKey))
                     choice = +1;
+                    choice
                     listen_for_response = false;
                     data.result(ix_trial).choice = choice;
-                    leaveState_fb = true;
+                    leaveState_fixate = true;
                 elseif logical(keyCode(doKey))
                     choice = -1;
+                    choice
                     listen_for_response = false;
                     data.result(ix_trial).choice = choice;
-                    leaveState_fb = true;
+                    leaveState_fixate = true;
                 end
             elseif t_state_now > t_feedback.leave
-                leaveState_choice = true;
+                leaveState_fb = true;
             end
             
             
             if leaveState_fb
                 currentState = 'feedback';
                 firstStateEntrance = true;
-            elseif leaveState_choice
+            elseif leaveState_fixate
                 currentState = 'fixate';
                 firstStateEntrance = true;
             elseif timeNow>data.protocol.maxtime
